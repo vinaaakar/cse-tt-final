@@ -308,6 +308,7 @@ export const generateClassTimetable = (semester, section, rawSubjects, reservedS
                 if (grid[d][s]) continue;
                 if (isSubElective && semesterLabSlots[`${d}-${s}`]) continue;
                 if (usedSlotsBySubject[sub.code]?.has(s)) continue;
+                if (s === 0 && grid.some(day => day[0] && day[0].code && String(day[0].code).split('/').map(c=>c.trim()).includes(sub.code))) continue;
                 if (overallTotal > 6 && existingInDay.length === 1) {
                     const firstWasBeforeLunch = existingInDay[0] < 4;
                     const currentIsBeforeLunch = s < 4;
@@ -344,6 +345,7 @@ export const generateClassTimetable = (semester, section, rawSubjects, reservedS
             for (const s of sOrder) {
                 if (grid[d][s]) continue;
                 if (isElective(sub) && semesterLabSlots[`${d}-${s}`]) continue;
+                if (s === 0 && grid.some(day => day[0] && day[0].code && String(day[0].code).split('/').map(c=>c.trim()).includes(sub.code))) continue;
 
                 const teachers = sub.allTeachers || (sub.teacherName !== 'TBA' ? String(sub.teacherName).split('/') : []);
                 if (teachers.some(t => reservedSlots[`${d}-${s}`] && reservedSlots[`${d}-${s}`].has(String(t).trim().toUpperCase()))) continue;
@@ -360,7 +362,11 @@ export const generateClassTimetable = (semester, section, rawSubjects, reservedS
         const d = 5;
         for (let s = 0; s < SLOTS; s++) {
             if (!grid[d][s] && theoryPoolSat.length > 0) {
-                let bestIdx = theoryPoolSat.findIndex(sub => !grid[d].some(c => c && c.code === sub.code));
+                let bestIdx = theoryPoolSat.findIndex(sub => {
+                    if (grid[d].some(c => c && c.code === sub.code)) return false;
+                    if (s === 0 && grid.some(day => day[0] && day[0].code && String(day[0].code).split('/').map(c=>c.trim()).includes(sub.code))) return false;
+                    return true;
+                });
                 if (bestIdx === -1) bestIdx = 0;
                 const sub = theoryPoolSat.splice(bestIdx, 1)[0];
                 grid[d][s] = { ...sub, duration: 1, isStart: true };
@@ -372,7 +378,12 @@ export const generateClassTimetable = (semester, section, rawSubjects, reservedS
         for (const d of dayIndices) {
             for (let s = 0; s < SLOTS; s++) {
                 if (!grid[d][s] && theoryPoolWk.length > 0) {
-                    const sub = theoryPoolWk.shift();
+                    let bestIdx = theoryPoolWk.findIndex(sub => {
+                        if (s === 0 && grid.some(day => day[0] && day[0].code && String(day[0].code).split('/').map(c=>c.trim()).includes(sub.code))) return false;
+                        return true;
+                    });
+                    if (bestIdx === -1) bestIdx = 0;
+                    const sub = theoryPoolWk.splice(bestIdx, 1)[0];
                     grid[d][s] = { ...sub, duration: 1, isStart: true };
                 }
             }
