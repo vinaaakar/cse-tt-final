@@ -211,7 +211,7 @@ const Timetable = () => {
                         const electiveGroups = {};
                         mappedSubjects.forEach(sub => {
                             const nameUpper = sub.name.toUpperCase();
-                            const isElective = (sub.type === 'Elective') || nameUpper.includes('ELECTIVE') || /[-\s–—]+(VIII|VII|VI|IV|V|I{1,3})\s*\*?\s*$/i.test(sub.name) || nameUpper.includes('VALUE ADDED');
+                            const isElective = ((sub.type === 'Elective') || nameUpper.includes('ELECTIVE') || /[-\s–—]+(VIII|VII|VI|IV|V|I{1,3})\s*\*?\s*$/i.test(sub.name) || nameUpper.includes('VALUE ADDED')) && !(sub.code && sub.code.includes('GE2731'));
                             if (isElective) {
                                 let match = nameUpper.match(/(OPEN|PROFESSIONAL|FREE|DEPT|DEPARTMENT)?[\s-]*ELECTIVE[\s-–—]*(VIII|VII|VI|IV|V|I{1,3})\s*(\*?)/);
                                 if (!match) {
@@ -333,7 +333,7 @@ const Timetable = () => {
             const currentSemesterSubjects = subjects.filter(s => s.semester === semester);
             const groupMembers = currentSemesterSubjects.filter(sub => {
                 const nameUpper = sub.name.toUpperCase();
-                const isElective = (sub.type === 'Elective') || nameUpper.includes('ELECTIVE') || /[-\s–—]+(VIII|VII|VI|IV|V|I{1,3})\s*\*?\s*$/i.test(sub.name) || nameUpper.includes('VALUE ADDED');
+                const isElective = ((sub.type === 'Elective') || nameUpper.includes('ELECTIVE') || /[-\s–—]+(VIII|VII|VI|IV|V|I{1,3})\s*\*?\s*$/i.test(sub.name) || nameUpper.includes('VALUE ADDED')) && !(sub.code && sub.code.includes('GE2731'));
                 if (!isElective) return false;
                 let match = nameUpper.match(/(OPEN|PROFESSIONAL|FREE|DEPT|DEPARTMENT)?[\s-]*ELECTIVE[\s-–—]*(VIII|VII|VI|IV|V|I{1,3})\s*(\*?)/);
                 if (!match) {
@@ -933,7 +933,7 @@ const Timetable = () => {
                                         const nameUpper = sub.name.toUpperCase();
                                         const teacher = teachers.find(t => t.subjectCode === sub.code && t.section === selectedSectionView);
                                         const req = (parseInt(sub.credit) || 0) + (parseInt(sub.satCount) || 0);
-                                        const isElective = (sub.type === 'Elective') || nameUpper.includes('ELECTIVE') || /[-\s–—]+(VIII|VII|VI|IV|V|I{1,3})\s*\*?\s*$/i.test(sub.name) || nameUpper.includes('VALUE ADDED');
+                                        const isElective = ((sub.type === 'Elective') || nameUpper.includes('ELECTIVE') || /[-\s–—]+(VIII|VII|VI|IV|V|I{1,3})\s*\*?\s*$/i.test(sub.name) || nameUpper.includes('VALUE ADDED')) && !(sub.code && sub.code.includes('GE2731'));
                                         let groupID = sub.code;
                                         if (isElective) {
                                             let match = nameUpper.match(/(OPEN|PROFESSIONAL|FREE|DEPT|DEPARTMENT)?[\s-]*ELECTIVE[\s-–—]*(VIII|VII|VI|IV|V|I{1,3})\s*(\*?)/);
@@ -1083,7 +1083,7 @@ const Timetable = () => {
                             const singles = [];
                             semSubjects.forEach(sub => {
                                 const nameUpper = sub.name.toUpperCase();
-                                const isElective = (sub.type === 'Elective') || nameUpper.includes('ELECTIVE');
+                                const isElective = ((sub.type === 'Elective') || nameUpper.includes('ELECTIVE')) && !(sub.code && sub.code.includes('GE2731'));
                                 let addedToGroup = false;
                                 if (isElective) {
                                     const match = nameUpper.match(/(OPEN|PROFESSIONAL|FREE|DEPT|DEPARTMENT)?[\s-]*ELECTIVE[\s-–—]*(VIII|VII|VI|IV|V|I{1,3})\s*(\*?)/);

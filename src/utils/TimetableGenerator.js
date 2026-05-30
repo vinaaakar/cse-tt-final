@@ -1,4 +1,11 @@
 export const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+export const hasIntersection = (code1, code2) => {
+    if (!code1 || !code2) return false;
+    if (code1 === code2) return true;
+    const c1 = String(code1).split('/').map(c => c.trim());
+    const c2 = String(code2).split('/').map(c => c.trim());
+    return c1.some(c => c2.includes(c));
+};
 export const isBlockSubject = (subject) => {
     if (!subject) return false;
     const name = String(subject.name || '').toUpperCase();
@@ -14,7 +21,22 @@ export const isBlockSubject = (subject) => {
 export const generateClassTimetable = (semester, section, rawSubjects, reservedSlots = {}, syncElectives = {}, relaxed = false, globalLabUsage = {}, slotsCount = 7, globalFacultyLoad = {}, semesterLabSlots = {}) => {
     const SLOTS = slotsCount;
     const grid = Array(6).fill(null).map(() => Array(SLOTS).fill(null));
-    const counts = rawSubjects.map((s, idx) => {
+    const isElective = (s) => ((s.type && s.type.toUpperCase().includes('ELECTIVE')) || (s.name && s.name.toUpperCase().includes('ELECTIVE')) || (s.name && /[-\s–—]+(VIII|VII|VI|IV|V|I{1,3})\s*\*?\s*$/i.test(s.name)) || (s.name && s.name.toUpperCase().includes('VALUE ADDED'))) && !(s.code && s.code.includes('GE2731'));
+    const isRestrictedFromFirstPeriod = (s) => String(s.name || '').toUpperCase().includes('VALUE ADDED') || String(s.type || '').toUpperCase().includes('VALUE ADDED') || String(s.name || '').toUpperCase().includes('MANDATORY') || String(s.type || '').toUpperCase().includes('MANDATORY') || String(s.name || '').toUpperCase().includes('SPOKEN TUTORIAL');
+
+    const filteredSubjects = rawSubjects.filter(s => {
+        if (isElective(s)) {
+            const name = String(s.name || '').toUpperCase();
+            const type = String(s.type || '').toUpperCase();
+            const isProfOrOpen = name.includes('PROFESSIONAL') || type.includes('PROFESSIONAL') || name.includes('OPEN') || type.includes('OPEN');
+            const isMandatory = name.includes('MANDATORY') || type.includes('MANDATORY');
+            const isManagement = name.includes('MANAGEMENT') || type.includes('MANAGEMENT');
+            if (!isProfOrOpen && !isRestrictedFromFirstPeriod(s) && !isMandatory && !isManagement) return false;
+        }
+        return true;
+    });
+
+    const counts = filteredSubjects.map((s, idx) => {
         const wk = parseInt(s.credit) || 0;
         const sat = parseInt(s.satCount) || 0;
         const isLab = isBlockSubject(s);
@@ -27,7 +49,6 @@ export const generateClassTimetable = (semester, section, rawSubjects, reservedS
             labPart: isLab ? (wk + sat) : 0
         };
     });
-    const isElective = (s) => (s.type && s.type.toUpperCase().includes('ELECTIVE')) || (s.name && s.name.toUpperCase().includes('ELECTIVE')) || (s.name && /[-\s–—]+(VIII|VII|VI|IV|V|I{1,3})\s*\*?\s*$/i.test(s.name)) || (s.name && s.name.toUpperCase().includes('VALUE ADDED'));
     counts.forEach(sub => {
         let targets = (sub.fixedSlots && (Array.isArray(sub.fixedSlots) ? sub.fixedSlots : sub.fixedSlots[section] || sub.fixedSlots['_ALL'])) || [];
         const isSubLab = isBlockSubject(sub);
@@ -86,7 +107,7 @@ export const generateClassTimetable = (semester, section, rawSubjects, reservedS
             }
         });
     });
-    counts.filter(s => isElective(s) && isBlockSubject(s)).forEach(sub => {
+    counts.filter(s => isElective(s)).forEach(sub => {
         if (syncElectives[sub.code] && Array.isArray(syncElectives[sub.code])) {
             syncElectives[sub.code].forEach(slot => {
                 const { d, s } = slot;
@@ -180,9 +201,8 @@ export const generateClassTimetable = (semester, section, rawSubjects, reservedS
                                 if (original) {
                                     const currentAllocated = grid.flat().filter(cell => {
                                         if (!cell || !cell.code) return false;
-                                        const codes = String(cell.code).split('/').map(c => c.trim());
                                         const isCellLab = cell.isLab || cell.duration > 1;
-                                        return codes.includes(original.code) && isCellLab === isBlockSubject(original);
+                                        return hasIntersection(cell.code, original.code) && isCellLab === isBlockSubject(original);
                                     }).length;
 
                                     if (currentAllocated <= original.totalReq) {
@@ -246,9 +266,10 @@ export const generateClassTimetable = (semester, section, rawSubjects, reservedS
     grid.forEach((day, d) => {
         day.forEach((cell, s) => {
             if (cell && cell.code) {
-                const codes = String(cell.code).split('/').map(c => c.trim());
-                codes.forEach(c => {
-                    if (usedSlotsBySubject[c]) usedSlotsBySubject[c].add(s);
+                Object.keys(usedSlotsBySubject).forEach(key => {
+                    if (hasIntersection(cell.code, key)) {
+                        usedSlotsBySubject[key].add(s);
+                    }
                 });
             }
         });
@@ -262,6 +283,35 @@ export const generateClassTimetable = (semester, section, rawSubjects, reservedS
         return 0;
     });
     theoryPoolWk = [];
+
+    const uniqueSubjects = [...new Set(pool.map(s => s.code))];
+    uniqueSubjects.forEach(code => {
+        const subIdx = pool.findIndex(s => s.code === code);
+        if (subIdx === -1) return;
+        const sub = pool[subIdx];
+        if (isRestrictedFromFirstPeriod(sub)) return;
+
+        const hasFirstPeriod = grid.some(day => day[0] && day[0].code && hasIntersection(day[0].code, sub.code));
+        if (hasFirstPeriod) return;
+
+        const dOrder = [0, 1, 2, 3, 4].sort(() => Math.random() - 0.5);
+        for (const d of dOrder) {
+            if (grid[d][0]) continue;
+            
+            const teachers = sub.allTeachers || (sub.teacherName !== 'TBA' ? String(sub.teacherName).split('/') : []);
+            if (teachers.some(t => reservedSlots[`${d}-0`] && reservedSlots[`${d}-0`].has(String(t).trim().toUpperCase()))) continue;
+            
+            grid[d][0] = { ...sub, duration: 1, isStart: true };
+            if (usedSlotsBySubject[sub.code]) usedSlotsBySubject[sub.code].add(0);
+            if (isElective(sub)) {
+                if (!syncElectives[sub.code]) syncElectives[sub.code] = [];
+                syncElectives[sub.code].push({ d, s: 0 });
+            }
+            pool.splice(subIdx, 1);
+            break;
+        }
+    });
+
     const labSlotsArray = Object.keys(semesterLabSlots).map(k => {
         const [d, s] = k.split('-').map(Number);
         return { d, s };
@@ -272,7 +322,7 @@ export const generateClassTimetable = (semester, section, rawSubjects, reservedS
             if (isElective(sub)) return false;
             if (grid[d].some(c => {
                 if (!c || !c.code) return false;
-                return String(c.code).split('/').map(code => code.trim()).includes(sub.code);
+                return hasIntersection(c.code, sub.code);
             })) return false;
 
             const teachers = sub.allTeachers || (sub.teacherName !== 'TBA' ? String(sub.teacherName).split('/') : []);
@@ -286,6 +336,7 @@ export const generateClassTimetable = (semester, section, rawSubjects, reservedS
             if (usedSlotsBySubject[sub.code]) usedSlotsBySubject[sub.code].add(s);
         }
     });
+
     while (pool.length > 0) {
         const sub = pool.shift();
         let placed = false;
@@ -297,7 +348,7 @@ export const generateClassTimetable = (semester, section, rawSubjects, reservedS
             const existingInDay = grid[d].map((c, i) => {
                 if (!c || !c.code) return -1;
                 const codes = String(c.code).split('/').map(code => code.trim());
-                return codes.includes(sub.code) ? i : -1;
+                return hasIntersection(c.code, sub.code) ? i : -1;
             }).filter(idx => idx !== -1);
             if (overallTotal <= 6) {
                 if (existingInDay.length > 0) continue;
@@ -308,7 +359,8 @@ export const generateClassTimetable = (semester, section, rawSubjects, reservedS
                 if (grid[d][s]) continue;
                 if (isSubElective && semesterLabSlots[`${d}-${s}`]) continue;
                 if (usedSlotsBySubject[sub.code]?.has(s)) continue;
-                if (s === 0 && grid.some(day => day[0] && day[0].code && String(day[0].code).split('/').map(c=>c.trim()).includes(sub.code))) continue;
+                if (s === 0 && isRestrictedFromFirstPeriod(sub)) continue;
+                if (s === 0 && grid.some(day => day[0] && day[0].code && hasIntersection(day[0].code, sub.code))) continue;
                 if (overallTotal > 6 && existingInDay.length === 1) {
                     const firstWasBeforeLunch = existingInDay[0] < 4;
                     const currentIsBeforeLunch = s < 4;
@@ -320,6 +372,10 @@ export const generateClassTimetable = (semester, section, rawSubjects, reservedS
 
                 grid[d][s] = { ...sub, duration: 1, isStart: true };
                 if (usedSlotsBySubject[sub.code]) usedSlotsBySubject[sub.code].add(s);
+                if (isSubElective) {
+                    if (!syncElectives[sub.code]) syncElectives[sub.code] = [];
+                    syncElectives[sub.code].push({ d, s });
+                }
                 placed = true;
                 break;
             }
@@ -337,7 +393,7 @@ export const generateClassTimetable = (semester, section, rawSubjects, reservedS
         for (const d of dOrder) {
             const existingInDay = grid[d].filter(c => {
                 if (!c || !c.code) return false;
-                return String(c.code).split('/').map(code => code.trim()).includes(sub.code);
+                return hasIntersection(c.code, sub.code);
             }).length;
             if (overallTotal <= 6 && existingInDay > 0) continue;
             if (overallTotal > 6 && existingInDay >= 2) continue;
@@ -345,12 +401,18 @@ export const generateClassTimetable = (semester, section, rawSubjects, reservedS
             for (const s of sOrder) {
                 if (grid[d][s]) continue;
                 if (isElective(sub) && semesterLabSlots[`${d}-${s}`]) continue;
-                if (s === 0 && grid.some(day => day[0] && day[0].code && String(day[0].code).split('/').map(c=>c.trim()).includes(sub.code))) continue;
+                if (s === 0 && isRestrictedFromFirstPeriod(sub)) continue;
+                if (s === 0 && grid.some(day => day[0] && day[0].code && hasIntersection(day[0].code, sub.code))) continue;
 
                 const teachers = sub.allTeachers || (sub.teacherName !== 'TBA' ? String(sub.teacherName).split('/') : []);
                 if (teachers.some(t => reservedSlots[`${d}-${s}`] && reservedSlots[`${d}-${s}`].has(String(t).trim().toUpperCase()))) continue;
 
-                grid[d][s] = { ...theoryPoolWk.shift(), duration: 1, isStart: true };
+                const shiftedSub = theoryPoolWk.shift();
+                grid[d][s] = { ...shiftedSub, duration: 1, isStart: true };
+                if (isElective(shiftedSub)) {
+                    if (!syncElectives[shiftedSub.code]) syncElectives[shiftedSub.code] = [];
+                    syncElectives[shiftedSub.code].push({ d, s });
+                }
                 placed = true;
                 break;
             }
@@ -363,13 +425,27 @@ export const generateClassTimetable = (semester, section, rawSubjects, reservedS
         for (let s = 0; s < SLOTS; s++) {
             if (!grid[d][s] && theoryPoolSat.length > 0) {
                 let bestIdx = theoryPoolSat.findIndex(sub => {
-                    if (grid[d].some(c => c && c.code === sub.code)) return false;
-                    if (s === 0 && grid.some(day => day[0] && day[0].code && String(day[0].code).split('/').map(c=>c.trim()).includes(sub.code))) return false;
+                    if (grid[d].some(c => c && hasIntersection(c.code, sub.code))) return false;
+                    if (s === 0 && isRestrictedFromFirstPeriod(sub)) return false;
+                    if (s === 0 && grid.some(day => day[0] && day[0].code && hasIntersection(day[0].code, sub.code))) return false;
                     return true;
                 });
-                if (bestIdx === -1) bestIdx = 0;
+                if (bestIdx === -1) {
+                    bestIdx = theoryPoolSat.findIndex(sub => {
+                        if (s === 0 && isRestrictedFromFirstPeriod(sub)) return false;
+                        return true;
+                    });
+                    if (bestIdx === -1) {
+                        if (s === 0) continue;
+                        bestIdx = 0;
+                    }
+                }
                 const sub = theoryPoolSat.splice(bestIdx, 1)[0];
                 grid[d][s] = { ...sub, duration: 1, isStart: true };
+                if (isElective(sub)) {
+                    if (!syncElectives[sub.code]) syncElectives[sub.code] = [];
+                    syncElectives[sub.code].push({ d, s });
+                }
             }
         }
     }
@@ -379,12 +455,26 @@ export const generateClassTimetable = (semester, section, rawSubjects, reservedS
             for (let s = 0; s < SLOTS; s++) {
                 if (!grid[d][s] && theoryPoolWk.length > 0) {
                     let bestIdx = theoryPoolWk.findIndex(sub => {
-                        if (s === 0 && grid.some(day => day[0] && day[0].code && String(day[0].code).split('/').map(c=>c.trim()).includes(sub.code))) return false;
+                        if (s === 0 && isRestrictedFromFirstPeriod(sub)) return false;
+                        if (s === 0 && grid.some(day => day[0] && day[0].code && hasIntersection(day[0].code, sub.code))) return false;
                         return true;
                     });
-                    if (bestIdx === -1) bestIdx = 0;
+                    if (bestIdx === -1) {
+                        bestIdx = theoryPoolWk.findIndex(sub => {
+                            if (s === 0 && isRestrictedFromFirstPeriod(sub)) return false;
+                            return true;
+                        });
+                        if (bestIdx === -1) {
+                            if (s === 0) continue;
+                            bestIdx = 0;
+                        }
+                    }
                     const sub = theoryPoolWk.splice(bestIdx, 1)[0];
                     grid[d][s] = { ...sub, duration: 1, isStart: true };
+                    if (isElective(sub)) {
+                        if (!syncElectives[sub.code]) syncElectives[sub.code] = [];
+                        syncElectives[sub.code].push({ d, s });
+                    }
                 }
             }
         }
