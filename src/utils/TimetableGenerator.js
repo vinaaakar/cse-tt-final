@@ -22,7 +22,13 @@ export const generateClassTimetable = (semester, section, rawSubjects, reservedS
     const SLOTS = slotsCount;
     const grid = Array(6).fill(null).map(() => Array(SLOTS).fill(null));
     const isElective = (s) => ((s.type && s.type.toUpperCase().includes('ELECTIVE')) || (s.name && s.name.toUpperCase().includes('ELECTIVE')) || (s.name && /[-\s–—]+(VIII|VII|VI|IV|V|I{1,3})\s*\*?\s*$/i.test(s.name)) || (s.name && s.name.toUpperCase().includes('VALUE ADDED'))) && !(s.code && s.code.includes('GE2731'));
-    const isRestrictedFromFirstPeriod = (s) => String(s.name || '').toUpperCase().includes('VALUE ADDED') || String(s.type || '').toUpperCase().includes('VALUE ADDED') || String(s.name || '').toUpperCase().includes('MANDATORY') || String(s.type || '').toUpperCase().includes('MANDATORY') || String(s.name || '').toUpperCase().includes('SPOKEN TUTORIAL');
+    const isStrictlyRestrictedFromFirstPeriod = (s) => String(s.name || '').toUpperCase().includes('VALUE ADDED') || String(s.type || '').toUpperCase().includes('VALUE ADDED') || String(s.name || '').toUpperCase().includes('MANDATORY') || String(s.type || '').toUpperCase().includes('MANDATORY');
+    const isRestrictedFromFirstPeriod = (s) => isStrictlyRestrictedFromFirstPeriod(s) || String(s.name || '').toUpperCase().includes('SPOKEN TUTORIAL');
+    const isAdjacent = (grid, d, s, code) => {
+        if (s > 0 && grid[d][s-1] && hasIntersection(grid[d][s-1].code, code)) return true;
+        if (s < grid[d].length - 1 && grid[d][s+1] && hasIntersection(grid[d][s+1].code, code)) return true;
+        return false;
+    };
 
     const filteredSubjects = rawSubjects.filter(s => {
         if (isElective(s)) {
@@ -421,23 +427,39 @@ export const generateClassTimetable = (semester, section, rawSubjects, reservedS
         if (!placed) theoryPoolWk.push(theoryPoolWk.shift());
     }
     if (theoryPoolSat.length > 0) {
+        theoryPoolSat.sort(() => Math.random() - 0.5);
         const d = 5;
-        for (let s = 0; s < SLOTS; s++) {
+        const sOrderSat = Array.from({ length: SLOTS }, (_, i) => i).sort(() => Math.random() - 0.5);
+        for (const s of sOrderSat) {
             if (!grid[d][s] && theoryPoolSat.length > 0) {
                 let bestIdx = theoryPoolSat.findIndex(sub => {
                     if (grid[d].some(c => c && hasIntersection(c.code, sub.code))) return false;
                     if (s === 0 && isRestrictedFromFirstPeriod(sub)) return false;
                     if (s === 0 && grid.some(day => day[0] && day[0].code && hasIntersection(day[0].code, sub.code))) return false;
+                    if (isAdjacent(grid, d, s, sub.code)) return false;
                     return true;
                 });
                 if (bestIdx === -1) {
                     bestIdx = theoryPoolSat.findIndex(sub => {
                         if (s === 0 && isRestrictedFromFirstPeriod(sub)) return false;
+                        if (isAdjacent(grid, d, s, sub.code)) return false;
                         return true;
                     });
                     if (bestIdx === -1) {
-                        if (s === 0) continue;
-                        bestIdx = 0;
+                        bestIdx = theoryPoolSat.findIndex(sub => {
+                            if (s === 0 && isRestrictedFromFirstPeriod(sub)) return false;
+                            return true;
+                        });
+                        if (bestIdx === -1) {
+                            bestIdx = theoryPoolSat.findIndex(sub => {
+                                if (s === 0 && isStrictlyRestrictedFromFirstPeriod(sub)) return false;
+                                return true;
+                            });
+                            if (bestIdx === -1) {
+                                if (s === 0) continue;
+                                bestIdx = 0;
+                            }
+                        }
                     }
                 }
                 const sub = theoryPoolSat.splice(bestIdx, 1)[0];
@@ -450,23 +472,38 @@ export const generateClassTimetable = (semester, section, rawSubjects, reservedS
         }
     }
     if (theoryPoolWk.length > 0) {
-        let dayIndices = [0, 1, 2, 3, 4];
+        let dayIndices = [0, 1, 2, 3, 4].sort(() => Math.random() - 0.5);
         for (const d of dayIndices) {
-            for (let s = 0; s < SLOTS; s++) {
+            const sOrderFallback = Array.from({ length: SLOTS }, (_, i) => i).sort(() => Math.random() - 0.5);
+            for (const s of sOrderFallback) {
                 if (!grid[d][s] && theoryPoolWk.length > 0) {
                     let bestIdx = theoryPoolWk.findIndex(sub => {
                         if (s === 0 && isRestrictedFromFirstPeriod(sub)) return false;
                         if (s === 0 && grid.some(day => day[0] && day[0].code && hasIntersection(day[0].code, sub.code))) return false;
+                        if (isAdjacent(grid, d, s, sub.code)) return false;
                         return true;
                     });
                     if (bestIdx === -1) {
                         bestIdx = theoryPoolWk.findIndex(sub => {
                             if (s === 0 && isRestrictedFromFirstPeriod(sub)) return false;
+                            if (isAdjacent(grid, d, s, sub.code)) return false;
                             return true;
                         });
                         if (bestIdx === -1) {
-                            if (s === 0) continue;
-                            bestIdx = 0;
+                            bestIdx = theoryPoolWk.findIndex(sub => {
+                                if (s === 0 && isRestrictedFromFirstPeriod(sub)) return false;
+                                return true;
+                            });
+                            if (bestIdx === -1) {
+                                bestIdx = theoryPoolWk.findIndex(sub => {
+                                    if (s === 0 && isStrictlyRestrictedFromFirstPeriod(sub)) return false;
+                                    return true;
+                                });
+                                if (bestIdx === -1) {
+                                    if (s === 0) continue;
+                                    bestIdx = 0;
+                                }
+                            }
                         }
                     }
                     const sub = theoryPoolWk.splice(bestIdx, 1)[0];
